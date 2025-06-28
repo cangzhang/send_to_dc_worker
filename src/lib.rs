@@ -21,7 +21,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             let url = format!("https://discord.com/api/v10/channels/{}/messages", body.channel_id);            
             let headers = Headers::new();
-            headers.set("Authorization", &format!("Bot {}", dc_token))?;
+            headers.set("Authorization", &format!("Bot {dc_token}"))?;
             headers.set("Content-Type", "application/json")?;
             let message_body = serde_json::to_string(&serde_json::json!({
                 "content": body.url
@@ -29,7 +29,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             let response = Fetch::Request(Request::new_with_init(&url, &RequestInit {
                 method: Method::Post,
-                headers: headers,
+                headers,
                 body: Some(message_body.into()),
                 ..Default::default()
             })?).send().await?;
