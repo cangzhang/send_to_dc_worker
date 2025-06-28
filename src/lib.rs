@@ -14,6 +14,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     let router = Router::new();
     router
+        .get("/", |_, _ctx| Response::ok("Send message to Discord channel"))
         .get("/ping", |_, _ctx| Response::ok("pong"))
         .post_async("/send", async move |mut req, ctx| {
             let dc_token = ctx.env.secret("DISCORD_TOKEN")?.to_string();
