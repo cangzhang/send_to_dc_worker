@@ -1,0 +1,6 @@
+name = "send_to_dc_worker"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-06-28"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
