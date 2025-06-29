@@ -1,6 +1,9 @@
-name = "send_to_dc_worker"
+name = "send-to-dc"
 main = "build/worker/shim.mjs"
 compatibility_date = "2025-06-28"
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"
+
+[observability]
+enabled = true
