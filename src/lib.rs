@@ -48,6 +48,17 @@ fn make_error_response(message: &str, status: u16) -> Result<Response> {
     }
 }
 
+fn make_user_data(user: &User) -> serde_json::Value {
+    serde_json::json!({
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+        "last_sign_in_at": user.last_sign_in_at,
+        "email_confirmed_at": user.email_confirmed_at,
+    })
+}
+
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
@@ -73,14 +84,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                         "expires_in": session.expires_in,
                         "expires_at": session.expires_at,
                         "token_type": session.token_type,
-                        "user": serde_json::json!({
-                            "id": user.id,
-                            "email": user.email,
-                            "created_at": user.created_at,
-                            "updated_at": user.updated_at,
-                            "last_sign_in_at": user.last_sign_in_at,
-                            "email_confirmed_at": user.email_confirmed_at,
-                        }),
+                        "user": make_user_data(&user),
                     }))
                 }
                 Err(e) => make_error_response(&e.to_string(), 400),
@@ -117,7 +121,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 return make_error_response("Unauthorized", 401);
             }
             let user = user.unwrap();
-            Response::from_json(&user)
+            Response::from_json(&make_user_data(&user))
         })
         .post_async("/api/send", async move |mut req, ctx| {
             let dc_token = ctx.env.secret("DISCORD_TOKEN")?.to_string();
