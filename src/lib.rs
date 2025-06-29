@@ -14,14 +14,14 @@ struct CreateUserParam {
     password: String,
 }
 
-async fn get_auth_client(ctx: RouteContext<()>) -> Result<AuthClient> {
+async fn get_auth_client(ctx: &RouteContext<()>) -> Result<AuthClient> {
     let project_url = ctx.env.secret("SUPABASE_URL")?.to_string();
     let api_key = ctx.env.secret("SUPABASE_API_KEY")?.to_string();
     let jwt_secret = ctx.env.secret("SUPABASE_JWT_SECRET")?.to_string();
     Ok(AuthClient::new(project_url, api_key, jwt_secret))
 }
 
-async fn validate_user(req: Request, ctx: RouteContext<()>) -> Result<Option<User>> {
+async fn validate_user(req: &Request, ctx: &RouteContext<()>) -> Result<Option<User>> {
     let auth_client = get_auth_client(ctx).await?;
     let token = req.headers().get("Authorization")?;
     if token.is_none() {
@@ -70,7 +70,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         })
         .get("/ping", |_, _ctx| Response::ok("pong"))
         .post_async("/api/login", async move |mut req, ctx| {
-            let auth_client = get_auth_client(ctx).await?;
+            let auth_client = get_auth_client(&ctx).await?;
             let body = req.json::<CreateUserParam>().await?;
             match auth_client
                 .login_with_email(&body.email, &body.password)
@@ -91,7 +91,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
         })
         .post_async("/api/register", async move |mut req, ctx| {
-            let auth_client = get_auth_client(ctx).await?;
+            let auth_client = get_auth_client(&ctx).await?;
             let body = req.json::<CreateUserParam>().await?;
             match auth_client
                 .sign_up_with_email_and_password(&body.email, &body.password, None)
@@ -116,7 +116,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
         })
         .get_async("/api/me", async move |req, ctx| {
-            let user = validate_user(req, ctx).await?;
+            let user = validate_user(&req, &ctx).await?;
             if user.is_none() {
                 return make_error_response("Unauthorized", 401);
             }
@@ -124,6 +124,11 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             Response::from_json(&make_user_data(&user))
         })
         .post_async("/api/send", async move |mut req, ctx| {
+            let user = validate_user(&req, &ctx).await?;
+            if user.is_none() {
+                return make_error_response("Unauthorized", 401);
+            }
+
             let dc_token = ctx.env.secret("DISCORD_TOKEN")?.to_string();
             let body = req.json::<SendMessage>().await?;
 
