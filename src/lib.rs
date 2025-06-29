@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use supabase_auth::models::{AuthClient, EmailSignUpResult};
+use supabase_auth::models::{AuthClient, EmailSignUpResult, User};
 use worker::*;
-// use serde_json::to_string;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct SendMessage {
@@ -10,7 +9,7 @@ struct SendMessage {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct CreateUser {
+struct CreateUserParam {
     email: String,
     password: String,
 }
@@ -20,6 +19,33 @@ async fn get_auth_client(ctx: RouteContext<()>) -> Result<AuthClient> {
     let api_key = ctx.env.secret("SUPABASE_API_KEY")?.to_string();
     let jwt_secret = ctx.env.secret("SUPABASE_JWT_SECRET")?.to_string();
     Ok(AuthClient::new(project_url, api_key, jwt_secret))
+}
+
+async fn validate_user(req: Request, ctx: RouteContext<()>) -> Result<Option<User>> {
+    let auth_client = get_auth_client(ctx).await?;
+    let token = req.headers().get("Authorization")?;
+    if token.is_none() {
+        return Ok(None);
+    }
+    let token = token.unwrap();
+    if let Ok(user) = auth_client.get_user(&token).await {
+        return Ok(Some(user));
+    }
+
+    Err(worker::Error::RustError("Unauthorized".to_string()))
+}
+
+fn make_error_response(message: &str, status: u16) -> Result<Response> {
+    let resp = Response::builder()
+        .with_status(status)
+        .with_header("Content-Type", "application/json");
+    if let Ok(r) = resp {
+        r.from_json(&serde_json::json!({
+            "error": message
+        }))
+    } else {
+        Response::error(message, status)
+    }
 }
 
 #[event(fetch)]
@@ -34,7 +60,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/ping", |_, _ctx| Response::ok("pong"))
         .post_async("/api/login", async move |mut req, ctx| {
             let auth_client = get_auth_client(ctx).await?;
-            let body = req.json::<CreateUser>().await?;
+            let body = req.json::<CreateUserParam>().await?;
             match auth_client
                 .login_with_email(&body.email, &body.password)
                 .await
@@ -57,12 +83,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                         }),
                     }))
                 }
-                Err(e) => Response::error(&e.to_string(), 500),
+                Err(e) => make_error_response(&e.to_string(), 400),
             }
         })
         .post_async("/api/register", async move |mut req, ctx| {
             let auth_client = get_auth_client(ctx).await?;
-            let body = req.json::<CreateUser>().await?;
+            let body = req.json::<CreateUserParam>().await?;
             match auth_client
                 .sign_up_with_email_and_password(&body.email, &body.password, None)
                 .await
@@ -82,8 +108,16 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                         "updated_at": confirmation.updated_at,
                     }))
                 }
-                Err(e) => Response::error(&e.to_string(), 500),
+                Err(e) => make_error_response(&e.to_string(), 500),
             }
+        })
+        .get_async("/api/me", async move |req, ctx| {
+            let user = validate_user(req, ctx).await?;
+            if user.is_none() {
+                return make_error_response("Unauthorized", 401);
+            }
+            let user = user.unwrap();
+            Response::from_json(&user)
         })
         .post_async("/api/send", async move |mut req, ctx| {
             let dc_token = ctx.env.secret("DISCORD_TOKEN")?.to_string();
@@ -113,10 +147,10 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             .await?;
 
             if response.status_code() < 200 || response.status_code() >= 300 {
-                return Err(worker::Error::RustError(format!(
-                    "Discord API error: {}",
-                    response.status_code()
-                )));
+                return make_error_response(
+                    &format!("Discord API error: {}", response.status_code()),
+                    response.status_code(),
+                );
             }
 
             Response::from_json(&serde_json::json!({
